@@ -2,20 +2,7 @@ using MendelTwoPointLinkage
 using MendelBase
 using Search
 using SearchSetup
-using DataFrames  
-
-# function return_keyword()
-#     keyword = set_keyword_defaults!(Dict{AbstractString, Any}())
-#     keyword["gender_neutral"] = true
-#     keyword["lod_score_table"] = "Lod_Score_Frame.txt"
-#     keyword["parameters"] = 1
-#     keyword["points"] = 9
-#     process_keywords!(keyword, "two-point linkage Control.txt", "")
-#     (pedigree, person, nuclear_family, locus, snpdata,
-#         locus_frame, phenotype_frame, pedigree_frame, snp_definition_frame) =
-#         read_external_data_files(keyword)
-#     return keyword
-# end
+using DataFrames
 
 @testset "initialize_optimization_two_point_linkage" begin
     keyword1 = set_keyword_defaults!(Dict{AbstractString, Any}())
@@ -85,12 +72,81 @@ using DataFrames
     @test parameter2.parameters == 2
 end
 
-@testset "penetrance function" begin
-    
+@testset "prior function" begin
+    keyword = set_keyword_defaults!(Dict{AbstractString, Any}())
+    keyword["gender_neutral"] = true
+    keyword["lod_score_table"] = "Lod_Score_Frame.txt"
+    keyword["parameters"] = 1
+    keyword["points"] = 9
+    parameter = set_parameter_defaults(keyword)
+    process_keywords!(keyword, "two-point linkage Control.txt", "")
+    (pedigree, person, nuclear_family, locus, snpdata,
+    locus_frame, phenotype_frame, pedigree_frame, snp_definition_frame) =
+        read_external_data_files(keyword)
+    keyword["eliminate_genotypes"] = true
+    keyword["lump_alleles"] = true
+
+    # first test "genetic counseling 1" files
+    par = parameter.par #this is [0.0]
+    (instruction, elston_stewart_count) = orchestrate_likelihood(pedigree,
+        person, nuclear_family, locus, keyword)
+
+    # note the following probabilities are provided in the locus frame
+    dic_locus1 = Dict("1" => 0.62, "2" => 0.17, "3" => 0.14, "4" => 0.07)
+    dic_locus2 = Dict("1" => 0.003, "2" => 0.997)
+    locus_3_sum = 0.41 + 0.14 + 0.03 + 0.39 #need to normalize allele freq to 1 at locus 3
+    dic_locus3 = Dict("1" => 0.41/locus_3_sum, "2" => 0.14/locus_3_sum,
+        "3" => 0.03/locus_3_sum, "4" => 0.39/locus_3_sum)
+
+    for n = instruction.start[1]:instruction.finish[1]-1
+        # n is the variable iterating from instruction.start[ped] to instruction.finish[ped].
+        operation = instruction.operation[n]
+        start = instruction.extra[n][1]
+        finish = instruction.extra[n][2]
+        i = instruction.extra[n][3]
+        if operation != penetrance_and_prior_array continue end #this avoids some array access errors
+        if person.mother[i] != 0 continue end #prior prob doesnt exist for non founder
+
+        #
+        # Construct the parent's multiple locus genotypes.
+        #
+        genotypes = MendelBase.genotype_count(person, locus, i, start, finish)
+        multi_genotype = MendelBase.construct_multigenotypes(person, locus, start, finish,
+                                            genotypes, i)
+
+        for j = 1:genotypes
+            prob = MendelTwoPointLinkage.prior_two_point_linkage(person, locus, 
+                multi_genotype[:, :, j], par, keyword, start, finish, i)
+            answer = 1.0
+
+            # tally probabilities contributed by the 3 locus 
+            answer *= dic_locus1[string(multi_genotype[1, 1, j])]
+            answer *= dic_locus1[string(multi_genotype[2, 1, j])]
+
+            answer *= dic_locus2[string(multi_genotype[1, 2, j])]
+            answer *= dic_locus2[string(multi_genotype[2, 2, j])]
+
+            answer *= dic_locus3[string(multi_genotype[1, 3, j])]
+            answer *= dic_locus3[string(multi_genotype[2, 3, j])]
+
+            @test answer == prob
+        end
+    end
 end
 
-@testset "prior function" begin
-    
+@testset "penetrance function" begin
+    keyword = set_keyword_defaults!(Dict{AbstractString, Any}())
+    keyword["gender_neutral"] = true
+    keyword["lod_score_table"] = "Lod_Score_Frame.txt"
+    # keyword["eliminate_genotypes"] = true
+    # keyword["lump_alleles"] = true
+    keyword["parameters"] = 1
+    keyword["points"] = 9
+    process_keywords!(keyword, "two-point linkage Control.txt", "")
+    (pedigree, person, nuclear_family, locus, snpdata,
+        locus_frame, phenotype_frame, pedigree_frame, snp_definition_frame) =
+        read_external_data_files(keyword)
+    parameter = set_parameter_defaults(keyword)
 end
 
 @testset "transmission function" begin
