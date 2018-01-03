@@ -228,37 +228,37 @@ end
                 #
                 #compute the probaiblity that a multi_genotype pass down the gamete
                 #
+
+        		#0.35 is recombination fraction given in locus.theta
+	            recomb = 0.5 * (1.0 - 2.0 * 0.35) 
+
             	if !(gamete[1, l] in multi_genotype[:, 1, k]) ||
             	   !(gamete[2, l] in multi_genotype[:, 2, k]) ||
             	   !(gamete[3, l] in multi_genotype[:, 3, k])
             	    #case1: an allele came out of nowhere
-            		# @test trans == 0.0
-            	else 
-            		#0.35 is recombination fraction given in locus.theta
-		            recomb = 0.5 * (1.0 - 2.0 * 0.35) 
-		            number_of_matches = gamete[:, l] .== multi_genotype[1, :, k] # only 3 locus!
-
-	                if sum(number_of_matches) == 3 && 4 in multi_genotype[:, :, k]
-	                    #case2: recombination occurred in parent and was passed down
-	                	# @test trans == 0.5 * (0.5 + recomb)
-	                elseif sum(number_of_matches) == 3 && !(4 in multi_genotype[:, :, k])
-	                	#case3: recombination didn't occur and one whole allele was passed down
-	                	# @test trans == 0.5
-	                elseif sum(number_of_matches) == 1 || sum(number_of_matches) == 2
-	                	#case3: recombination did occur, i.e. exactly 1 allele out of 3 is swapped.
-	                	
-	                	if 4 in multi_genotype[:, :, k]
-	                		# @test trans == 0.0
-		                	println("begin")
-		                	println(trans)
-		                	println(gamete[:, l])
-		                	println(multi_genotype[:, :, k])
-		                else
-		                	# @test trans == 0.5 * (0.5 - recomb)
-		                end
-	                end
-	            end
-                # @test_throws(MethodError, "shouldn't have reached here bro")
+            		@test trans == 0.0
+            	elseif all(gamete[:, l] .== multi_genotype[1, :, k]) ||
+            		all(gamete[:, l] .== multi_genotype[2, :, k])
+            		#case2: an entire allele was passed down
+            		if !(4 in multi_genotype[:, :, k]) && !(3 in multi_genotype[:, :, k])
+            			#recombination didn't occur in parent; an allele simply passes down
+            			@test trans == 0.5
+            		else
+            			#recombination occurred in parent; then an allele passes down
+            			@test trans == 0.5 * (0.5 + recomb)
+            		end
+            	elseif all(gamete[1:2, l] .== multi_genotype[1, 1:2, k]) ||
+            		all(gamete[1:2, l] .== multi_genotype[2, 1:2, k])
+            		# case3: recombination occured when allele was being passed down
+					@test trans == 0.5 * (0.5 - recomb) 
+       			elseif !(all(gamete[1:2, l] .== multi_genotype[1, 1:2, k])) &&
+       				!(all(gamete[1:2, l] .== multi_genotype[2, 1:2, k]))
+			        # case4: recombination occurred at first allele is impossible, 
+       				# because the recombination fraction is 0 at that point
+           		   	@test trans == 0.0
+           		else
+	                @test_throws(MethodError, "shouldn't have reached here bro")
+       			end
             end
         end
     end    
