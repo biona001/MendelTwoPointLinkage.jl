@@ -14,9 +14,10 @@ using DataFrames
     (pedigree, person, nuclear_family, locus, snpdata,
         locus_frame, phenotype_frame, pedigree_frame, snp_definition_frame) =
         read_external_data_files(keyword1)
-    parameter1 = set_parameter_defaults(keyword1)
+    parameter1 = set_parameter_defaults(keyword1) #must process_keywords before setting parameters
 
-    @test parameter1.travel == "grid"
+    # not yet called initialize_optimization
+    @test parameter1.travel == "grid" #from control file
     @test size(parameter1.grid) == (9, 1) #(points, par)
     @test all(parameter1.grid .== 0.0)
     @test size(parameter1.par) == (1,)
@@ -197,71 +198,84 @@ end
     (instruction, elston_stewart_count) = orchestrate_likelihood(pedigree,
         person, nuclear_family, locus, keyword)
 
-    ped = 1
-    for n = instruction.start[ped]:instruction.finish[ped]-1
-        operation = instruction.operation[n]
-        if operation != transmission_array; continue; end #this avoids some array access errors
+    for ped in 1:pedigree.pedigrees
+	    for n = instruction.start[ped]:instruction.finish[ped]-1
+	        operation = instruction.operation[n]
+	        if operation != transmission_array; continue; end #this avoids some array access errors
 
-        start = instruction.extra[n][1]
-        finish = instruction.extra[n][2]
-        i = instruction.extra[n][3]
-        j = instruction.extra[n][4]
+	        start = instruction.extra[n][1]
+	        finish = instruction.extra[n][2]
+	        i = instruction.extra[n][3]
+	        j = instruction.extra[n][4]
 
-        # need 2 genotypes to run transmission, so we construct them
-        # and give them the same names as used in elston_stewart_evaluation
-        i_genotypes = MendelBase.genotype_count(person, locus, i, start, finish)
-        multi_genotype = MendelBase.construct_multigenotypes(person, locus, start, finish,
-                                            i_genotypes, i)
+	        # need 2 genotypes to run transmission, so we construct them
+	        # and give them the same names as used in elston_stewart_evaluation
+	        i_genotypes = MendelBase.genotype_count(person, locus, i, start, finish)
+	        multi_genotype = MendelBase.construct_multigenotypes(person, locus, start, finish,
+	                                            i_genotypes, i)
 
-        maternal = !person.male[i]
-        j_genotypes = MendelBase.genotype_count(person, locus, j, start, finish)
-        gamete = MendelBase.construct_gametes(person, locus, start, finish, j_genotypes, j,
-                                     maternal)
+	        maternal = !person.male[i]
+	        j_genotypes = MendelBase.genotype_count(person, locus, j, start, finish)
+	        gamete = MendelBase.construct_gametes(person, locus, start, finish, j_genotypes, j,
+	                                     maternal)
 
-        # loop through all possible genotypes, and see if transmission probability is correct
-        for l = 1:j_genotypes
-            for k = 1:i_genotypes
-                trans = MendelTwoPointLinkage.transmission_two_point_linkage(person, 
-                    locus, gamete[:, l], multi_genotype[:, :, k], par, keyword, 
-                    start, finish, i, j)
+	        # loop through all possible genotypes, and see if transmission probability is correct
+	        for l = 1:j_genotypes
+	            for k = 1:i_genotypes
+	                trans = MendelTwoPointLinkage.transmission_two_point_linkage(person, 
+	                    locus, gamete[:, l], multi_genotype[:, :, k], par, keyword, 
+	                    start, finish, i, j)
+	                #
+	                #compute the probaiblity that a multi_genotype produce a certain gamete
+	        		#0.35 is recombination fraction between locus 2 and 3 given by calling locus.theta
+	        		#Note between locus 1 and 2 the recomb fraction is 0 since they are 0 morgans apart
+	        		#
+		            recomb = 0.35
 
-                #
-                #compute the probaiblity that a multi_genotype pass down the gamete
-                #
-
-        		#0.35 is recombination fraction given in locus.theta
-	            recomb = 0.5 * (1.0 - 2.0 * 0.35) 
-
-            	if !(gamete[1, l] in multi_genotype[:, 1, k]) ||
-            	   !(gamete[2, l] in multi_genotype[:, 2, k]) ||
-            	   !(gamete[3, l] in multi_genotype[:, 3, k])
-            	    #case1: an allele came out of nowhere
-            		@test trans == 0.0
-            	elseif all(gamete[:, l] .== multi_genotype[1, :, k]) ||
-            		all(gamete[:, l] .== multi_genotype[2, :, k])
-            		#case2: an entire allele was passed down
-            		if !(4 in multi_genotype[:, :, k]) && !(3 in multi_genotype[:, :, k])
-            			#recombination didn't occur in parent; an allele simply passes down
-            			@test trans == 0.5
-            		else
-            			#recombination occurred in parent; then an allele passes down
-            			@test trans == 0.5 * (0.5 + recomb)
-            		end
-            	elseif all(gamete[1:2, l] .== multi_genotype[1, 1:2, k]) ||
-            		all(gamete[1:2, l] .== multi_genotype[2, 1:2, k])
-            		# case3: recombination occured when allele was being passed down
-					@test trans == 0.5 * (0.5 - recomb) 
-       			elseif !(all(gamete[1:2, l] .== multi_genotype[1, 1:2, k])) &&
-       				!(all(gamete[1:2, l] .== multi_genotype[2, 1:2, k]))
-			        # case4: recombination occurred at first allele is impossible, 
-       				# because the recombination fraction is 0 at that point
-           		   	@test trans == 0.0
-           		else
-	                @test_throws(MethodError, "shouldn't have reached here bro")
-       			end
-            end
-        end
-    end    
+	            	if !(gamete[1, l] in multi_genotype[:, 1, k]) ||
+	            	   !(gamete[2, l] in multi_genotype[:, 2, k]) ||
+	            	   !(gamete[3, l] in multi_genotype[:, 3, k])
+	            	    #case1: an allele came out of nowhere
+	            		@test trans == 0.0
+	            	elseif all(multi_genotype[1, :, k] .== multi_genotype[2, :, k])
+	            		#case2: if two multi-locus-genotype is identical, then gamete will be too
+	            		@test trans == 1.0
+	            	elseif all(multi_genotype[1, 1:2, k] .== multi_genotype[2, 1:2, k])
+            			#case3: The first two allele of both multi locus genotype is the same.
+            			#		Then the 3rd (which must be different) passes down with prob 0.5
+						@test trans == 0.5
+	       			elseif !(all(multi_genotype[1, 1:2, k] .== multi_genotype[2, 1:2, k])) 
+						# When the first two allele of the two multi locus genotype is NOT the same, 
+						# we need to break it up into different cases
+						if !(all(gamete[1:2, l] .== multi_genotype[1, 1:2, k])) &&
+						   !(all(gamete[1:2, l] .== multi_genotype[2, 1:2, k])) 
+						    # case4: the first two alleles in gamete must be the same as one of the first two 
+						    # alleles in the multi locus genotype, since recombination between locus 1 
+						    # and 2 is zero. So the prob that they're not the same is 0 
+						    @test trans == 0
+						elseif multi_genotype[1, 3, k] == multi_genotype[2, 3, k]
+							# case5: if the 3rd locus in both multi-locus-genotype is the same, then one of the 
+							# first two locus pass down with prob 0.5, and we sum the case where 
+							# recombination happens or not since both will create the desired gamete. 
+	       					@test trans == 0.5 * recomb + 0.5 * (1 - recomb) 
+	       				elseif all(gamete[:, l] .== multi_genotype[1, :, k]) ||
+	       					   all(gamete[:, l] .== multi_genotype[2, :, k])
+	       					# case6: the first two alleles from one of the multi-locus-genotype was passed
+	       					# down, and recombination didn't happen so that the third locus is too
+	       					@test trans == 0.5 * (1 - recomb) 
+	       				else
+	       					# case7: the first two alleles from one of the multi-locus-genotype was passed
+	       					# down, and recombination did happen so that the third locus from the other 
+	       					# one is passed down.
+	       					@test trans == 0.5 * recomb
+						end
+	           		else
+		                @test_throws(MethodError, "all cases should have been considered")
+	       			end
+	            end
+	        end
+	    end    
+	end
 end
 
 @testset "wrapper and basics" begin
