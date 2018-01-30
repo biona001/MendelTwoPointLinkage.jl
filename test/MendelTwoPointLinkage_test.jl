@@ -230,7 +230,8 @@ end
 	        		#0.35 is recombination fraction between locus 2 and 3 given by calling locus.theta
 	        		#Note between locus 1 and 2 the recomb fraction is 0 since they are 0 morgans apart
 	        		#
-		            recomb = 0.35
+	        		recomb_12 = 0.0
+		            recomb_23 = 0.35
 
 	            	if !(gamete[1, l] in multi_genotype[:, 1, k]) ||
 	            	   !(gamete[2, l] in multi_genotype[:, 2, k]) ||
@@ -252,22 +253,22 @@ end
 						    # case4: the first two alleles in gamete must be the same as one of the first two 
 						    # alleles in the multi locus genotype, since recombination between locus 1 
 						    # and 2 is zero. So the prob that they're not the same is 0 
-						    @test trans == 0
+						    @test trans == recomb_12 * 0.5
 						elseif multi_genotype[1, 3, k] == multi_genotype[2, 3, k]
 							# case5: if the 3rd locus in both multi-locus-genotype is the same, then one of the 
 							# first two locus pass down with prob 0.5, and we sum the case where 
 							# recombination happens or not since both will create the desired gamete. 
-	       					@test trans == 0.5 * recomb + 0.5 * (1 - recomb) 
+	       					@test trans == 0.5 * recomb_23 + 0.5 * (1 - recomb_23) 
 	       				elseif all(gamete[:, l] .== multi_genotype[1, :, k]) ||
 	       					   all(gamete[:, l] .== multi_genotype[2, :, k])
 	       					# case6: the first two alleles from one of the multi-locus-genotype was passed
 	       					# down, and recombination didn't happen so that the third locus is too
-	       					@test trans == 0.5 * (1 - recomb) 
+	       					@test trans == 0.5 * (1 - recomb_23) 
 	       				else
 	       					# case7: the first two alleles from one of the multi-locus-genotype was passed
 	       					# down, and recombination did happen so that the third locus from the other 
 	       					# one is passed down.
-	       					@test trans == 0.5 * recomb
+	       					@test trans == 0.5 * recomb_23
 						end
 	           		else
 		                @test_throws(MethodError, "all cases should have been considered")
@@ -279,7 +280,34 @@ end
 end
 
 @testset "wrapper and basics" begin
+    #
+    # There should be no error when running two_point_linkage_option and TwoPointLinkage, given the input. 
+    # If there were, then program should halt and would not return "false" or "nothing"
+    #
+	keyword = set_keyword_defaults!(Dict{AbstractString, Any}())
+    keyword["gender_neutral"] = true
+    keyword["lod_score_table"] = "Lod_Score_Frame.txt"
+    keyword["parameters"] = 1
+    keyword["points"] = 9
+    process_keywords!(keyword, "two-point linkage Control.txt", "")
+    (pedigree, person, nuclear_family, locus, snpdata,
+    locus_frame, phenotype_frame, pedigree_frame, snp_definition_frame) =
+        read_external_data_files(keyword)
+    
+    execution_error = MendelTwoPointLinkage.two_point_linkage_option(pedigree, person, nuclear_family,
+      locus, locus_frame, phenotype_frame, pedigree_frame, keyword)
+    final_test = TwoPointLinkage("two-point linkage Control.txt")
 
+    @test execution_error == false
+    @test final_test == nothing
 end
+
+
+
+
+
+
+
+
 
 
